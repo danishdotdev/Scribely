@@ -1,0 +1,17 @@
+{
+  "name": "meeting-bot-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Desktop recorder for local meeting transcription without a meeting bot joining.",
+  "main": "src/main.js",
+  "scripts": {
+    "dev": "electron .",
+    "check": "node ../scripts/check-syntax.js"
+  },
+  "devDependencies": {
+    "electron": "^39.0.0"
+  },
+  "dependencies": {
+    "lucide-static": "^1.23.0"
+  }
+}

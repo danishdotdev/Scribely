@@ -1,0 +1,420 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; connect-src http://127.0.0.1:* http://localhost:* https:; img-src 'self' file: data:; media-src 'self' blob:; script-src 'self'; style-src 'self';"
+    />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Siela Recorder</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <aside class="sidebar" aria-label="Primary navigation">
+        <div class="brand">
+          <div class="brand-mark">S</div>
+          <div>
+            <h1>Siela Recorder</h1>
+            <p>Desktop transcription</p>
+          </div>
+        </div>
+
+        <nav class="nav-list">
+          <button class="nav-item active" type="button" data-view="recorder" aria-current="page">
+            <img class="icon" src="../../node_modules/lucide-static/icons/radio.svg" alt="" />
+            <span>Recorder</span>
+          </button>
+          <button class="nav-item" type="button" data-view="library">
+            <img class="icon" src="../../node_modules/lucide-static/icons/library.svg" alt="" />
+            <span>Library</span>
+          </button>
+          <button class="nav-item" type="button" data-view="settings">
+            <img class="icon" src="../../node_modules/lucide-static/icons/settings.svg" alt="" />
+            <span>Settings</span>
+          </button>
+        </nav>
+
+        <div class="sidebar-status">
+          <div id="sidebarStatusDot" class="status-dot warning"></div>
+          <div>
+            <strong id="sidebarStatusTitle">Checking connection</strong>
+            <span id="sidebarStatusText">Local API</span>
+          </div>
+        </div>
+      </aside>
+
+      <section class="workspace">
+        <header class="topbar">
+          <div>
+            <h2 id="viewTitle">Recorder</h2>
+            <p id="viewSubtitle">Pick a provider, paste your API key, then record locally.</p>
+          </div>
+          <div class="topbar-actions">
+            <button id="refreshAppButton" class="icon-button" type="button" aria-label="Refresh">
+              <img class="icon" src="../../node_modules/lucide-static/icons/refresh-cw.svg" alt="" />
+            </button>
+            <div id="statusPill" class="status-pill idle">Idle</div>
+          </div>
+        </header>
+
+        <section id="recorderView" class="view active" aria-labelledby="viewTitle">
+          <div class="recorder-grid">
+            <section class="surface primary-recorder">
+              <div class="recording-header">
+                <div>
+                  <span class="eyebrow">Current recording</span>
+                  <h3 id="recordingTitle">Ready to record</h3>
+                </div>
+                <div id="timer" class="timer">00:00</div>
+              </div>
+
+              <div id="setupCard" class="setup-card">
+                <div class="setup-copy">
+                  <span class="eyebrow">Setup</span>
+                  <h3 id="setupTitle">Add your transcription key</h3>
+                  <p id="setupText">Choose a provider in Settings and paste the API key you want this app to use.</p>
+                </div>
+                <button id="openSettingsButton" class="button secondary" type="button">
+                  <img class="icon" src="../../node_modules/lucide-static/icons/key-round.svg" alt="" />
+                  <span>Open Settings</span>
+                </button>
+              </div>
+
+              <label class="field">
+                <span>Meeting title</span>
+                <input id="meetingTitle" autocomplete="off" spellcheck="false" placeholder="Weekly product call" />
+              </label>
+
+              <label class="field">
+                <span>Notes during the meeting <small>optional</small></span>
+                <textarea id="rawNotes" rows="5" spellcheck="true" placeholder="Paste agenda items, decisions, names, or words the transcript should preserve."></textarea>
+              </label>
+
+              <details class="advanced-recorder-options">
+                <summary>
+                  <span>Recording options</span>
+                  <small>Microphone, template, privacy, and audio check</small>
+                </summary>
+
+                <label class="field">
+                  <span>Note style</span>
+                  <select id="meetingTemplate">
+                    <option value="general">General meeting</option>
+                    <option value="product">Product review</option>
+                    <option value="sales">Sales call</option>
+                    <option value="interview">User interview</option>
+                    <option value="standup">Stand-up</option>
+                    <option value="one_on_one">1:1</option>
+                    <option value="hiring">Hiring interview</option>
+                  </select>
+                </label>
+
+                <label class="toggle-row">
+                  <input id="includeMic" type="checkbox" checked />
+                  <span>
+                    <strong>Include my microphone</strong>
+                    <small>Use this when you speak in the meeting and want your voice transcribed.</small>
+                  </span>
+                </label>
+
+                <label class="toggle-row">
+                  <input id="deleteAudioAfterTranscription" type="checkbox" checked />
+                  <span>
+                    <strong>Delete audio after transcription</strong>
+                    <small>The transcript and notes stay saved. The local audio file is removed.</small>
+                  </span>
+                </label>
+
+                <div class="meter-grid" aria-label="Audio levels">
+                  <div class="meter-card">
+                    <div class="meter-heading">
+                      <img class="icon" src="../../node_modules/lucide-static/icons/volume-2.svg" alt="" />
+                      <span>Meeting audio</span>
+                    </div>
+                    <meter id="systemMeter" min="0" max="1" value="0"></meter>
+                    <small id="systemAudioText">Waiting</small>
+                  </div>
+                  <div class="meter-card">
+                    <div class="meter-heading">
+                      <img class="icon" src="../../node_modules/lucide-static/icons/mic.svg" alt="" />
+                      <span>Microphone</span>
+                    </div>
+                    <meter id="micMeter" min="0" max="1" value="0"></meter>
+                    <small id="micAudioText">Waiting</small>
+                  </div>
+                </div>
+              </details>
+
+              <div class="recording-actions">
+                <button id="startButton" class="button primary" type="button" disabled>
+                  <img class="icon" src="../../node_modules/lucide-static/icons/play.svg" alt="" />
+                  <span>Start recording</span>
+                </button>
+                <button id="stopButton" class="button danger" type="button" disabled>
+                  <img class="icon" src="../../node_modules/lucide-static/icons/square.svg" alt="" />
+                  <span>End recording</span>
+                </button>
+              </div>
+
+              <div id="message" class="message" role="status" aria-live="polite"></div>
+            </section>
+
+            <section class="surface readiness-panel">
+              <div class="section-heading">
+                <div>
+                  <span class="eyebrow">Simple setup</span>
+                  <h3>Three steps</h3>
+                </div>
+                <button id="testConnectionButton" class="button secondary" type="button">
+                  <img class="icon" src="../../node_modules/lucide-static/icons/check-circle-2.svg" alt="" />
+                  <span>Check</span>
+                </button>
+              </div>
+
+              <ol class="setup-steps">
+                <li>
+                  <span>1</span>
+                  <div>
+                    <strong>Choose provider</strong>
+                    <p id="providerStepText">AssemblyAI is selected.</p>
+                  </div>
+                </li>
+                <li>
+                  <span>2</span>
+                  <div>
+                    <strong>Paste API key</strong>
+                    <p id="keyStepText">Your key stays on this computer and is used for transcription.</p>
+                  </div>
+                </li>
+                <li>
+                  <span>3</span>
+                  <div>
+                    <strong>Start recording</strong>
+                    <p>Pick the meeting window or screen with audio enabled.</p>
+                  </div>
+                </li>
+              </ol>
+
+              <div class="readiness-list">
+                <div class="readiness-row" id="serverReadyRow">
+                  <div class="status-dot warning"></div>
+                  <div>
+                    <strong>Local app server</strong>
+                    <span id="serverReadyText">Checking</span>
+                  </div>
+                </div>
+                <div class="readiness-row" id="authReadyRow">
+                  <div class="status-dot warning"></div>
+                  <div>
+                    <strong>Local access</strong>
+                    <span id="authReadyText">Checking</span>
+                  </div>
+                </div>
+                <div class="readiness-row" id="assemblyReadyRow">
+                  <div class="status-dot warning"></div>
+                  <div>
+                    <strong id="providerReadyTitle">Provider key</strong>
+                    <span id="assemblyReadyText">Checking</span>
+                  </div>
+                </div>
+              </div>
+
+              <details class="technical-details">
+                <summary>Recording details</summary>
+                <div class="session-summary">
+                  <div>
+                    <span>Session</span>
+                    <strong id="sessionId">None</strong>
+                  </div>
+                  <div>
+                    <span>Uploaded</span>
+                    <strong id="bytesUploaded">0 KB</strong>
+                  </div>
+                  <div>
+                    <span>Chunks</span>
+                    <strong id="chunkCount">0</strong>
+                  </div>
+                </div>
+              </details>
+            </section>
+          </div>
+
+          <section class="surface transcript-preview">
+            <div class="section-heading">
+              <div>
+                <span class="eyebrow">Latest transcript</span>
+                <h3 id="latestTranscriptTitle">No transcript yet</h3>
+              </div>
+              <div class="button-row">
+                <button id="openCurrentButton" class="button secondary" type="button" disabled>
+                  <img class="icon" src="../../node_modules/lucide-static/icons/file-text.svg" alt="" />
+                  <span>Open</span>
+                </button>
+                <button id="copyCurrentButton" class="button secondary" type="button" disabled>
+                  <img class="icon" src="../../node_modules/lucide-static/icons/copy.svg" alt="" />
+                  <span>Copy</span>
+                </button>
+              </div>
+            </div>
+            <pre id="transcript">Your latest transcript will appear here after recording.</pre>
+          </section>
+        </section>
+
+        <section id="libraryView" class="view" aria-labelledby="viewTitle">
+          <section class="surface library-toolbar">
+            <label class="search-field">
+              <img class="icon" src="../../node_modules/lucide-static/icons/search.svg" alt="" />
+              <input id="librarySearch" type="search" placeholder="Search transcripts" />
+            </label>
+            <label class="select-field">
+              <span>Status</span>
+              <select id="libraryStatusFilter">
+                <option value="all">All</option>
+                <option value="completed">Completed</option>
+                <option value="transcribing">Transcribing</option>
+                <option value="recording">Recording</option>
+                <option value="failed">Failed</option>
+              </select>
+            </label>
+            <button id="refreshLibraryButton" class="button secondary" type="button">
+              <img class="icon" src="../../node_modules/lucide-static/icons/refresh-cw.svg" alt="" />
+              <span>Refresh</span>
+            </button>
+          </section>
+
+          <details class="surface ask-all-panel">
+            <summary>
+              <span>Ask across saved notes</span>
+              <small>Optional search helper</small>
+            </summary>
+            <div class="ask-row">
+              <input id="globalAskInput" autocomplete="off" spellcheck="true" placeholder="Ask for decisions, action items, risks, or follow-up across every transcript" />
+              <button id="globalAskButton" class="button secondary" type="button">
+                <img class="icon" src="../../node_modules/lucide-static/icons/message-circle.svg" alt="" />
+                <span>Ask</span>
+              </button>
+            </div>
+            <pre id="globalAskAnswer" class="chat-answer" hidden></pre>
+          </details>
+
+          <div class="library-grid">
+            <section class="surface meeting-list-panel">
+              <div class="section-heading compact">
+                <h3>Meetings</h3>
+                <span id="libraryCount" class="muted-count">0</span>
+              </div>
+              <div id="meetingList" class="meeting-list"></div>
+            </section>
+
+            <section class="surface transcript-detail-panel">
+              <div id="transcriptDetail" class="transcript-detail empty-state">
+                <img class="empty-icon" src="../../node_modules/lucide-static/icons/file-search.svg" alt="" />
+                <h3>Select a transcript</h3>
+                <p>Completed recordings, failed sessions, and in-progress transcriptions appear here.</p>
+              </div>
+            </section>
+          </div>
+        </section>
+
+        <section id="settingsView" class="view" aria-labelledby="viewTitle">
+          <form id="settingsForm" class="settings-grid">
+            <section class="surface setup-settings">
+              <div class="section-heading">
+                <div>
+                  <span class="eyebrow">API setup</span>
+                  <h3>Bring your own key</h3>
+                </div>
+                <button id="saveSettings" class="button primary" type="submit">
+                  <img class="icon" src="../../node_modules/lucide-static/icons/save.svg" alt="" />
+                  <span>Save</span>
+                </button>
+              </div>
+
+              <p class="settings-intro">Choose the transcription provider you want to pay for and paste that provider's API key. No cloud setup is needed for local recording.</p>
+
+              <label class="field">
+                <span>Transcription provider</span>
+                <select id="transcriptionProvider">
+                  <option value="assemblyai">AssemblyAI</option>
+                  <option value="deepgram">Deepgram</option>
+                  <option value="openai">OpenAI Whisper</option>
+                </select>
+              </label>
+
+              <label class="field">
+                <span id="providerKeyLabel">AssemblyAI API key</span>
+                <input id="providerApiKey" autocomplete="off" spellcheck="false" placeholder="Paste your provider API key" type="password" />
+                <small id="providerKeyHelp">Used only when you transcribe a local recording.</small>
+              </label>
+
+              <details class="advanced-settings">
+                <summary>
+                  <span>Advanced local server settings</span>
+                  <small>Only change these if you changed the API server.</small>
+                </summary>
+
+                <label class="field">
+                  <span>Local API URL</span>
+                  <input id="apiBaseUrl" autocomplete="off" spellcheck="false" placeholder="http://127.0.0.1:3000" />
+                </label>
+
+                <label class="field">
+                  <span>Server access key</span>
+                  <input id="apiKey" autocomplete="off" spellcheck="false" placeholder="Only needed when API_KEY is set" type="password" />
+                </label>
+
+                <label class="field">
+                  <span>User ID</span>
+                  <input id="userId" autocomplete="off" spellcheck="false" placeholder="local-user" />
+                </label>
+              </details>
+            </section>
+
+            <section class="surface">
+              <div class="section-heading">
+                <div>
+                  <span class="eyebrow">Storage</span>
+                  <h3>Local recordings</h3>
+                </div>
+              </div>
+              <div class="storage-list">
+                <div>
+                  <span>Transcript index</span>
+                  <strong>data/meetings.json</strong>
+                </div>
+                <div>
+                  <span>Audio recordings</span>
+                  <strong>Deleted by default after transcription</strong>
+                </div>
+                <div>
+                  <span>Transcription provider</span>
+                  <strong id="storageProviderText">AssemblyAI</strong>
+                </div>
+              </div>
+            </section>
+          </form>
+        </section>
+      </section>
+    </main>
+
+    <dialog id="deleteDialog" class="confirm-dialog">
+      <form method="dialog">
+        <div class="dialog-icon">
+          <img class="icon" src="../../node_modules/lucide-static/icons/trash-2.svg" alt="" />
+        </div>
+        <h3>Delete this transcript?</h3>
+        <p>This removes the saved transcript and local recording from this machine.</p>
+        <div class="dialog-actions">
+          <button id="cancelDeleteButton" class="button secondary" value="cancel" type="submit">Cancel</button>
+          <button id="confirmDeleteButton" class="button danger" value="confirm" type="button">Delete</button>
+        </div>
+      </form>
+    </dialog>
+
+    <div id="toastRegion" class="toast-region" aria-live="polite" aria-atomic="true"></div>
+
+    <script src="./renderer.js"></script>
+  </body>
+</html>

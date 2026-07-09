@@ -1,0 +1,32 @@
+node_modules/
+desktop/node_modules/
+desktop/dist/
+desktop/out/
+
+# VibeVoice local model runtime
+.venv-vibevoice/
+.hf-cache/
+
+# Local env and data
+.env
+.env.*
+!.env.example
+data/
+desktop-data/
+logs/
+coverage/
+*.log
+
+# Secrets / credentials
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+credentials.json
+token.json
+service-account*.json
+
+# OS
+.DS_Store
+Thumbs.db
