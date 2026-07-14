@@ -6,7 +6,8 @@
   "main": "src/main.js",
   "scripts": {
     "dev": "electron .",
-    "check": "node ../scripts/check-syntax.js"
+    "check": "node ../scripts/check-syntax.js",
+    "generate:icons": "electron scripts/generate-icons.js"
   },
   "devDependencies": {
     "electron": "^39.0.0"
