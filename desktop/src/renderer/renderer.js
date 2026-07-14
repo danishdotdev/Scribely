@@ -4,12 +4,14 @@ const state = {
   selectedSessionId: null,
   selectedSession: null,
   sessions: [],
+  calendarDate: new Date(),
   transcriptMode: 'hinglish',
   detailTab: 'notes',
   recorder: null,
   displayStream: null,
   micStream: null,
   mixedStream: null,
+  captureStream: null,
   audioContext: null,
   analyserNodes: {},
   chunkSequence: 0,
@@ -22,6 +24,8 @@ const state = {
   pollingId: null,
   pendingDeleteId: null,
   chatAnswers: {},
+  providerApiKeys: {},
+  selectedProviderId: 'assemblyai',
   connection: {
     server: false,
     auth: false,
@@ -34,37 +38,41 @@ const PROVIDER_META = {
     label: 'AssemblyAI',
     keyLabel: 'AssemblyAI API key',
     placeholder: 'Paste your AssemblyAI API key',
-    help: 'Best choice for speaker labels and Hinglish-heavy meeting tests.',
+    help: 'Fast cloud transcription with speaker labels and strong meeting-note support.',
     requiresApiKey: true
   },
   deepgram: {
     label: 'Deepgram',
     keyLabel: 'Deepgram API key',
     placeholder: 'Paste your Deepgram API key',
-    help: 'Supports diarization and fast speech-to-text for local recordings.',
+    help: 'Fast cloud transcription for teams that already use Deepgram.',
     requiresApiKey: true
   },
   openai: {
     label: 'OpenAI Whisper',
     keyLabel: 'OpenAI API key',
     placeholder: 'Paste your OpenAI API key',
-    help: 'Uses Whisper transcription. Speaker labels are limited.',
+    help: 'Simple cloud transcription. Speaker labels are limited.',
     requiresApiKey: true
   }
 };
 
 const viewCopy = {
   recorder: {
-    title: 'Recorder',
-    subtitle: 'Pick a provider, paste your API key, then record locally.'
+    title: 'Record',
+    subtitle: 'Capture meeting audio from this computer and save notes locally.'
   },
   library: {
-    title: 'Library',
-    subtitle: 'Find, search, export, and manage saved meeting notes.'
+    title: 'Meetings',
+    subtitle: 'Search transcripts, review notes, and manage saved recordings.'
+  },
+  calendar: {
+    title: 'Calendar',
+    subtitle: 'Review saved meetings by day and jump back into the transcript.'
   },
   settings: {
     title: 'Settings',
-    subtitle: 'Choose a provider and save the API key this computer should use.'
+    subtitle: 'Choose the transcription provider this computer should use.'
   }
 };
 
@@ -73,15 +81,18 @@ const els = {
   views: {
     recorder: document.getElementById('recorderView'),
     library: document.getElementById('libraryView'),
+    calendar: document.getElementById('calendarView'),
     settings: document.getElementById('settingsView')
   },
   viewTitle: document.getElementById('viewTitle'),
   viewSubtitle: document.getElementById('viewSubtitle'),
   refreshAppButton: document.getElementById('refreshAppButton'),
+  sidebarNewRecordingButton: document.getElementById('sidebarNewRecordingButton'),
   form: document.getElementById('settingsForm'),
   apiBaseUrl: document.getElementById('apiBaseUrl'),
   apiKey: document.getElementById('apiKey'),
   transcriptionProvider: document.getElementById('transcriptionProvider'),
+  providerCardList: document.getElementById('providerCardList'),
   providerApiKey: document.getElementById('providerApiKey'),
   providerKeyLabel: document.getElementById('providerKeyLabel'),
   providerKeyHelp: document.getElementById('providerKeyHelp'),
@@ -135,6 +146,17 @@ const els = {
   libraryCount: document.getElementById('libraryCount'),
   meetingList: document.getElementById('meetingList'),
   transcriptDetail: document.getElementById('transcriptDetail'),
+  sidebarMeetingHeading: document.getElementById('sidebarMeetingHeading'),
+  calendarMonthLabel: document.getElementById('calendarMonthLabel'),
+  calendarRangeLabel: document.getElementById('calendarRangeLabel'),
+  calendarWeekStrip: document.getElementById('calendarWeekStrip'),
+  calendarHours: document.getElementById('calendarHours'),
+  calendarDays: document.getElementById('calendarDays'),
+  calendarTodayButton: document.getElementById('calendarTodayButton'),
+  calendarPrevButton: document.getElementById('calendarPrevButton'),
+  calendarNextButton: document.getElementById('calendarNextButton'),
+  microphoneDevice: document.getElementById('microphoneDevice'),
+  detectMeetingApps: document.getElementById('detectMeetingApps'),
   deleteDialog: document.getElementById('deleteDialog'),
   confirmDeleteButton: document.getElementById('confirmDeleteButton'),
   toastRegion: document.getElementById('toastRegion')
@@ -172,6 +194,11 @@ function updateProviderCopy() {
   els.providerApiKey.placeholder = meta.placeholder;
   els.providerApiKey.disabled = meta.requiresApiKey === false;
   els.providerKeyHelp.textContent = meta.help;
+  if (els.providerCardList) {
+    for (const card of els.providerCardList.querySelectorAll('[data-provider-card]')) {
+      card.classList.toggle('selected', card.dataset.providerCard === selectedProvider());
+    }
+  }
   els.providerReadyTitle.textContent = meta.requiresApiKey === false ? `${meta.label} setup` : `${meta.label} key`;
   els.providerStepText.textContent = `${meta.label} is selected.`;
   if (meta.requiresApiKey === false) {
@@ -184,34 +211,81 @@ function updateProviderCopy() {
   els.storageProviderText.textContent = meta.label;
 }
 
-function loadSettings() {
-  const saved = JSON.parse(localStorage.getItem('meetingBotDesktopSettings') || '{}');
+async function loadSettings() {
+  const saved = JSON.parse(localStorage.getItem('scribelyDesktopSettings') || localStorage.getItem('meetingBotDesktopSettings') || '{}');
   els.apiBaseUrl.value = saved.apiBaseUrl || 'http://127.0.0.1:3000';
-  els.apiKey.value = saved.apiKey || '';
   els.transcriptionProvider.value = PROVIDER_META[saved.transcriptionProvider] ? saved.transcriptionProvider : 'assemblyai';
-  els.providerApiKey.value = saved.providerApiKey || '';
   els.userId.value = saved.userId || 'local-user';
-  els.meetingTitle.value = saved.meetingTitle || 'Local meeting recording';
+  els.meetingTitle.value = saved.meetingTitle || 'Untitled meeting';
   els.meetingTemplate.value = saved.meetingTemplate || 'general';
   els.rawNotes.value = saved.rawNotes || '';
   els.includeMic.checked = saved.includeMic !== false;
   els.deleteAudioAfterTranscription.checked = saved.deleteAudioAfterTranscription !== false;
+  els.microphoneDevice.value = saved.microphoneDevice || 'default';
+  els.detectMeetingApps.checked = saved.detectMeetingApps !== false;
+  state.selectedProviderId = selectedProvider();
+
+  let credentials = { apiKey: '', providerApiKeys: {} };
+  try {
+    credentials = await window.meetingBotDesktop.loadCredentials();
+  } catch (error) {
+    showToast('Could not load saved API keys from secure storage.', 'error');
+  }
+
+  state.providerApiKeys = credentials.providerApiKeys || {};
+  els.apiKey.value = credentials.apiKey || saved.apiKey || '';
+  els.providerApiKey.value = state.providerApiKeys[selectedProvider()] || saved.providerApiKey || '';
+
+  // Move credentials from earlier app versions out of browser storage once.
+  if (saved.apiKey || saved.providerApiKey) {
+    rememberProviderKey();
+    persistCredentials();
+  }
+  saveSettings();
   updateProviderCopy();
 }
 
 function saveSettings() {
-  localStorage.setItem('meetingBotDesktopSettings', JSON.stringify({
+  localStorage.setItem('scribelyDesktopSettings', JSON.stringify({
     apiBaseUrl: els.apiBaseUrl.value.trim(),
-    apiKey: els.apiKey.value,
     transcriptionProvider: selectedProvider(),
-    providerApiKey: els.providerApiKey.value,
     userId: els.userId.value.trim(),
     meetingTitle: els.meetingTitle.value.trim(),
     meetingTemplate: els.meetingTemplate.value,
     rawNotes: els.rawNotes.value,
     includeMic: els.includeMic.checked,
-    deleteAudioAfterTranscription: els.deleteAudioAfterTranscription.checked
+    deleteAudioAfterTranscription: els.deleteAudioAfterTranscription.checked,
+    microphoneDevice: els.microphoneDevice.value,
+    detectMeetingApps: els.detectMeetingApps.checked
   }));
+}
+
+function rememberProviderKey(provider = selectedProvider()) {
+  const key = els.providerApiKey.value;
+  if (key.trim()) state.providerApiKeys[provider] = key;
+  else delete state.providerApiKeys[provider];
+}
+
+function persistCredentials() {
+  const save = window.meetingBotDesktop?.saveCredentials;
+  if (typeof save !== 'function') return;
+  void save({
+    apiKey: els.apiKey.value,
+    providerApiKeys: state.providerApiKeys
+  }).catch(() => showToast('Could not save the API key securely on this computer.', 'error'));
+}
+
+function setProvider(provider) {
+  if (!PROVIDER_META[provider]) return;
+  rememberProviderKey(state.selectedProviderId);
+  els.transcriptionProvider.value = provider;
+  state.selectedProviderId = provider;
+  els.providerApiKey.value = state.providerApiKeys[provider] || '';
+  saveSettings();
+  persistCredentials();
+  updateProviderCopy();
+  updateConnectionUi();
+  testConnection({ quiet: true }).catch(() => updateConnectionUi());
 }
 
 function apiUrl(path) {
@@ -226,11 +300,14 @@ function authHeaders(extra = {}) {
 
 function friendlyError(error) {
   const message = String(error?.message || error || '');
+  if (/Request failed with status code 401/i.test(message)) {
+    return `${selectedProviderMeta().label} rejected the API key. Open Settings, paste a valid provider key, then try again.`;
+  }
   if (/unauthorized/i.test(message) || /401/.test(message)) {
     return 'The local server access key is incorrect. Open Settings, then check the advanced server key.';
   }
   if (/failed to fetch|networkerror|load failed/i.test(message)) {
-    return 'Cannot reach the Siela API. Check that the local server is running.';
+    return 'Cannot reach the Scribely app server. Check that the local server is running.';
   }
   if (/No .* API key/i.test(message)) {
     return `Add your ${selectedProviderMeta().label} API key in Settings, then try again.`;
@@ -335,8 +412,50 @@ function formatDate(value) {
   });
 }
 
+function startOfWeek(value) {
+  const date = new Date(value);
+  date.setHours(0, 0, 0, 0);
+  const day = date.getDay() || 7;
+  date.setDate(date.getDate() - day + 1);
+  return date;
+}
+
+function addDays(date, amount) {
+  const next = new Date(date);
+  next.setDate(next.getDate() + amount);
+  return next;
+}
+
+function isSameDay(left, right) {
+  return left.getFullYear() === right.getFullYear()
+    && left.getMonth() === right.getMonth()
+    && left.getDate() === right.getDate();
+}
+
+function formatCalendarTime(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+}
+
+function meetingDate(session) {
+  const date = new Date(session.startedAt || session.createdAt || session.updatedAt);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function meetingDurationMinutes(session) {
+  const started = new Date(session.startedAt || session.createdAt);
+  const ended = new Date(session.endedAt || session.completedAt || session.updatedAt);
+  if (Number.isNaN(started.getTime()) || Number.isNaN(ended.getTime()) || ended <= started) {
+    return 45;
+  }
+  return Math.max(20, Math.min(180, Math.round((ended - started) / 60000)));
+}
+
 function statusLabel(status) {
-  return String(status || 'unknown').replace(/_/g, ' ');
+  return String(status || 'unknown')
+    .replace(/_/g, ' ')
+    .replace(/^\w/, char => char.toUpperCase());
 }
 
 function sessionTitle(session) {
@@ -358,6 +477,68 @@ function templateLabel(value) {
 function providerDisplay(value) {
   const provider = value === 'whisper' ? 'openai' : String(value || '').toLowerCase();
   return PROVIDER_META[provider]?.label || value || 'Provider';
+}
+
+function compactDate(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return 'New';
+  return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
+}
+
+function longDate(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return 'Unknown date';
+  return date.toLocaleString([], {
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit'
+  });
+}
+
+function meetingApp(session) {
+  return session?.app || session?.meetingApp || (session?.source === 'calendar' ? 'Calendar' : 'Zoom');
+}
+
+function durationLabel(session) {
+  const started = new Date(session?.startedAt || session?.createdAt);
+  const ended = new Date(session?.endedAt || session?.completedAt || session?.updatedAt);
+  if (!Number.isNaN(started.getTime()) && !Number.isNaN(ended.getTime()) && ended > started) {
+    return formatTimer(ended - started);
+  }
+  if (session?.duration) return session.duration;
+  return session?.status === 'completed' ? 'Saved' : statusLabel(session?.status);
+}
+
+function speakerInitials(name = '') {
+  const cleaned = String(name || 'Speaker').trim();
+  return cleaned
+    .split(/\s+/)
+    .slice(0, 2)
+    .map(part => part[0]?.toUpperCase() || '')
+    .join('') || 'SP';
+}
+
+function transcriptSegments(session) {
+  const utterances = session?.utterances || [];
+  if (utterances.length) {
+    return utterances.map((utterance, index) => ({
+      time: utterance.start ? formatTimer(utterance.start * 1000) : formatTimer(index * 30000),
+      speaker: utterance.speaker || `Speaker ${index + 1}`,
+      initials: speakerInitials(utterance.speaker),
+      text: utterance.textHinglish || utterance.text || ''
+    })).filter(segment => segment.text);
+  }
+
+  const text = transcriptText(session, 'hinglish') || transcriptText(session, 'original') || session?.error || 'Transcript will appear after transcription finishes.';
+  return [{
+    time: '00:00',
+    speaker: 'Transcript',
+    initials: 'TR',
+    text
+  }];
 }
 
 function intelligence(session) {
@@ -453,6 +634,10 @@ function setView(name) {
   els.viewTitle.textContent = viewCopy[name].title;
   els.viewSubtitle.textContent = viewCopy[name].subtitle;
   if (name === 'library') loadLibrary().catch(error => showToast(friendlyError(error), 'error'));
+  if (name === 'calendar') {
+    renderCalendar();
+    loadLibrary().catch(error => showToast(friendlyError(error), 'error'));
+  }
 }
 
 function updateDot(row, stateName) {
@@ -480,7 +665,7 @@ function updateConnectionUi() {
   els.setupTitle.textContent = ready ? 'Ready to record' : 'Add your transcription key';
   els.setupText.textContent = ready
     ? `${selectedProviderMeta().label} is selected. Your next recording will be transcribed after you end it.`
-    : `Choose a provider in Settings and paste the API key you want this app to use.`;
+    : `Choose a provider in Settings and paste the API key Scribely should use.`;
   if (!state.recorder || state.recorder.state !== 'recording') {
     els.startButton.disabled = !ready;
   }
@@ -493,7 +678,7 @@ function isRecorderReady() {
 
 function recorderSetupMessage() {
   if (!state.connection.server) {
-    return 'Cannot reach the Siela API. Check that the local server is running.';
+    return 'Cannot reach the Scribely app server. Check that the local server is running.';
   }
   if (!state.connection.auth) {
     return 'Local server access is not ready. Open Settings and check Advanced local server settings.';
@@ -636,17 +821,23 @@ async function captureStreams() {
     throw new Error('No audio track was captured. Pick a screen/window with audio enabled, or enable microphone.');
   }
 
-  return { displayStream, micStream, mixedStream: destination.stream };
+  const captureStream = new MediaStream([
+    ...displayStream.getVideoTracks(),
+    ...destination.stream.getAudioTracks()
+  ]);
+
+  return { displayStream, micStream, mixedStream: destination.stream, captureStream };
 }
 
 function stopStreams() {
-  for (const stream of [state.displayStream, state.micStream, state.mixedStream]) {
+  for (const stream of [state.displayStream, state.micStream, state.mixedStream, state.captureStream]) {
     if (stream) stream.getTracks().forEach(track => track.stop());
   }
   if (state.audioContext) state.audioContext.close().catch(() => {});
   state.displayStream = null;
   state.micStream = null;
   state.mixedStream = null;
+  state.captureStream = null;
   state.audioContext = null;
   state.analyserNodes = {};
   els.systemMeter.value = 0;
@@ -680,13 +871,21 @@ async function uploadChunk(blob) {
   return state.uploadQueue;
 }
 
-function recorderMimeType() {
-  const candidates = [
-    'audio/webm;codecs=opus',
-    'audio/webm',
-    'video/webm;codecs=opus',
-    'video/webm'
-  ];
+function recorderMimeType(stream) {
+  const hasVideo = Boolean(stream?.getVideoTracks?.().length);
+  const candidates = hasVideo
+    ? [
+        'video/webm;codecs=vp9,opus',
+        'video/webm;codecs=vp8,opus',
+        'video/webm;codecs=opus',
+        'video/webm'
+      ]
+    : [
+        'audio/webm;codecs=opus',
+        'audio/webm',
+        'video/webm;codecs=opus',
+        'video/webm'
+      ];
   return candidates.find(type => MediaRecorder.isTypeSupported(type)) || '';
 }
 
@@ -720,6 +919,7 @@ async function startRecording() {
   state.displayStream = streams.displayStream;
   state.micStream = streams.micStream;
   state.mixedStream = streams.mixedStream;
+  state.captureStream = streams.captureStream;
 
   const title = els.meetingTitle.value.trim() || 'Local meeting recording';
   const sessionResponse = await requestJson('/local-capture/start', {
@@ -743,8 +943,8 @@ async function startRecording() {
   els.latestTranscriptTitle.textContent = title;
   els.transcript.textContent = 'Recording in progress. Click End recording to upload and transcribe.';
 
-  const mimeType = recorderMimeType();
-  state.recorder = new MediaRecorder(state.mixedStream, mimeType ? { mimeType } : undefined);
+  const mimeType = recorderMimeType(state.captureStream);
+  state.recorder = new MediaRecorder(state.captureStream, mimeType ? { mimeType } : undefined);
   state.recorder.ondataavailable = event => {
     if (event.data && event.data.size > 0) uploadChunk(event.data).catch(() => {});
   };
@@ -752,7 +952,7 @@ async function startRecording() {
   state.recorder.start(10000);
 
   setStatus('recording', 'Recording');
-  setMessage('Recording meeting audio. Transcription starts after you click End recording.');
+  setMessage('Recording meeting video and audio. Transcription starts after you click End recording.');
   els.stopButton.disabled = false;
   startTimer();
   startNoChunkWarning();
@@ -807,7 +1007,7 @@ async function refreshSession(id = state.sessionId) {
     const completedTranscript = transcriptText(session, 'hinglish');
     els.transcript.textContent = completedTranscript || 'Completed, but the transcript is empty.';
     els.latestTranscriptTitle.textContent = sessionTitle(session);
-    setMessage('Transcript saved to Library.');
+    setMessage('Meeting saved to Meetings.');
     els.startButton.disabled = false;
     els.stopButton.disabled = true;
     els.openCurrentButton.disabled = false;
@@ -874,13 +1074,17 @@ function filteredSessions() {
 function renderMeetingList() {
   const sessions = filteredSessions();
   els.libraryCount.textContent = String(sessions.length);
+  if (els.sidebarMeetingHeading) {
+    const query = els.librarySearch.value.trim();
+    els.sidebarMeetingHeading.textContent = query ? `${sessions.length} ${sessions.length === 1 ? 'result' : 'results'}` : 'Meetings';
+  }
 
   if (sessions.length === 0) {
     els.meetingList.innerHTML = `
       <div class="empty-state">
         <img class="empty-icon" src="../../node_modules/lucide-static/icons/inbox.svg" alt="" />
-        <h3>No transcripts found</h3>
-        <p>Record a meeting or adjust the search filter.</p>
+        <h3>No meetings found</h3>
+        <p>Start a new recording or adjust the search.</p>
       </div>
     `;
     return;
@@ -890,15 +1094,78 @@ function renderMeetingList() {
     <button class="meeting-item ${session.id === state.selectedSessionId ? 'active' : ''}" type="button" data-session-id="${escapeHtml(session.id)}">
       <div class="meeting-item-top">
         <span class="meeting-title">${escapeHtml(sessionTitle(session))}</span>
-        <span class="status-badge ${escapeHtml(session.status)}">${escapeHtml(statusLabel(session.status))}</span>
+        <span class="meeting-date">${escapeHtml(compactDate(session.startedAt || session.createdAt))}</span>
       </div>
       <div class="meeting-meta">
-        <span>${escapeHtml(formatDate(session.startedAt || session.createdAt))}</span>
-        <span>${escapeHtml(templateLabel(session.noteTemplate))}</span>
-        <span>${escapeHtml(recordingStorageLabel(session))}</span>
+        <span>${escapeHtml(meetingApp(session))}</span>
+        <span class="meta-dot"></span>
+        <span>${escapeHtml(durationLabel(session))}</span>
       </div>
     </button>
   `).join('');
+}
+
+function renderCalendar() {
+  const weekStart = startOfWeek(state.calendarDate);
+  const days = Array.from({ length: 7 }, (_, index) => addDays(weekStart, index));
+  const weekEnd = addDays(weekStart, 6);
+  const today = new Date();
+  const hourStart = 8;
+  const hourEnd = 20;
+  const hourHeight = 64;
+  const totalHeight = (hourEnd - hourStart + 1) * hourHeight;
+
+  els.calendarMonthLabel.textContent = weekStart.toLocaleDateString([], {
+    month: 'long',
+    year: 'numeric'
+  });
+  els.calendarRangeLabel.textContent = `${weekStart.toLocaleDateString([], { month: 'short', day: 'numeric' })} - ${weekEnd.toLocaleDateString([], { month: 'short', day: 'numeric' })}`;
+
+  els.calendarWeekStrip.innerHTML = days.map(day => `
+    <div class="calendar-day-head ${isSameDay(day, today) ? 'today' : ''}">
+      <span>${escapeHtml(day.toLocaleDateString([], { weekday: 'short' }))}</span>
+      <strong>${escapeHtml(String(day.getDate()))}</strong>
+    </div>
+  `).join('');
+
+  els.calendarHours.innerHTML = Array.from({ length: hourEnd - hourStart + 1 }, (_, index) => {
+    const hour = hourStart + index;
+    const date = new Date();
+    date.setHours(hour, 0, 0, 0);
+    return `<span style="height: ${hourHeight}px">${escapeHtml(date.toLocaleTimeString([], { hour: 'numeric' }))}</span>`;
+  }).join('');
+
+  const meetingsByDay = days.map(day => state.sessions
+    .map(session => ({ session, date: meetingDate(session) }))
+    .filter(item => item.date && isSameDay(item.date, day))
+    .sort((left, right) => left.date - right.date));
+
+  els.calendarDays.style.setProperty('--calendar-height', `${totalHeight}px`);
+  els.calendarDays.innerHTML = days.map((day, dayIndex) => {
+    const events = meetingsByDay[dayIndex].map(({ session, date }) => {
+      const minutes = date.getHours() * 60 + date.getMinutes();
+      const top = Math.max(0, minutes - hourStart * 60) / 60 * hourHeight;
+      const height = Math.max(42, meetingDurationMinutes(session) / 60 * hourHeight);
+      return `
+        <button class="calendar-event ${escapeHtml(session.status || 'unknown')}" type="button" data-calendar-session-id="${escapeHtml(session.id)}" style="top: ${top}px; height: ${height}px">
+          <span>${escapeHtml(formatCalendarTime(date))}</span>
+          <strong>${escapeHtml(sessionTitle(session))}</strong>
+          <small>${escapeHtml(statusLabel(session.status))}</small>
+        </button>
+      `;
+    }).join('');
+
+    return `
+      <div class="calendar-day-column ${isSameDay(day, today) ? 'today' : ''}" style="height: ${totalHeight}px">
+        <div class="calendar-grid-lines" aria-hidden="true"></div>
+        ${events || `
+          <div class="calendar-empty-note">
+            <span>No meetings</span>
+          </div>
+        `}
+      </div>
+    `;
+  }).join('');
 }
 
 async function loadLibrary({ quiet = false } = {}) {
@@ -906,6 +1173,10 @@ async function loadLibrary({ quiet = false } = {}) {
     const data = await requestJson('/meetings?limit=100');
     state.sessions = data.sessions || [];
     renderMeetingList();
+    renderCalendar();
+    if (!state.selectedSessionId && state.sessions[0]) {
+      await selectSession(state.sessions[0].id);
+    }
     if (!quiet) showToast('Library refreshed.');
   } catch (error) {
     state.sessions = [];
@@ -917,6 +1188,7 @@ async function loadLibrary({ quiet = false } = {}) {
         <p>${escapeHtml(friendlyError(error))}</p>
       </div>
     `;
+    renderCalendar();
     renderTranscriptDetail(null);
     if (!quiet) showToast(friendlyError(error), 'error');
   }
@@ -931,118 +1203,116 @@ async function selectSession(id) {
 }
 
 function renderTranscriptDetail(session) {
-  if (!['notes', 'transcript'].includes(state.detailTab)) {
-    state.detailTab = 'notes';
-  }
   if (!session) {
     els.transcriptDetail.className = 'transcript-detail empty-state';
     els.transcriptDetail.innerHTML = `
       <img class="empty-icon" src="../../node_modules/lucide-static/icons/file-search.svg" alt="" />
-      <h3>Select a transcript</h3>
-      <p>Completed recordings, enhanced notes, briefs, and action items appear here.</p>
+      <h3>No meeting selected</h3>
+      <p>Pick a meeting from the left library or start a new recording.</p>
     `;
     return;
   }
 
-  const transcriptAvailable = hasTranscript(session);
   const smart = intelligence(session);
-  const body = currentDetailText(session) || (
-    session.status === 'failed'
-      ? (session.error || 'Transcription failed.')
-      : 'Transcription is still in progress.'
-  );
-  const hasDetailText = Boolean(body);
-  const modeLabel = state.detailTab === 'transcript'
-    ? (state.transcriptMode === 'original' ? 'Original' : 'Hinglish')
-    : 'Notes';
-  const chatAnswer = state.chatAnswers[session.id] || '';
-  const tabButton = (tab, label) => `
-    <button type="button" data-action="tab" data-tab="${tab}" class="${state.detailTab === tab ? 'active' : ''}">
-      ${label}
-    </button>
-  `;
+  const segments = transcriptSegments(session);
+  const summary = (smart.summary || []).filter(Boolean);
+  const actionItems = (smart.actionItems || []).filter(Boolean);
+  const currentSpeaker = segments[0] || { speaker: 'Speaker', initials: 'SP' };
+  const otherSpeakers = segments
+    .filter(segment => segment.speaker !== currentSpeaker.speaker)
+    .filter((segment, index, array) => array.findIndex(item => item.speaker === segment.speaker) === index)
+    .slice(0, 3);
+  const needsRecovery = window.scribelyRecovery?.needsRecovery(session, state.sessionId);
 
   els.transcriptDetail.className = 'transcript-detail';
   els.transcriptDetail.innerHTML = `
     <div class="detail-header">
-      <div>
-        <h3>${escapeHtml(sessionTitle(session))}</h3>
-        <div class="detail-meta">
-          <span class="status-badge ${escapeHtml(session.status)}">${escapeHtml(statusLabel(session.status))}</span>
-          <span>${escapeHtml(formatDate(session.startedAt || session.createdAt))}</span>
-          <span>${escapeHtml(templateLabel(session.noteTemplate))}</span>
-          <span>${escapeHtml(recordingStorageLabel(session))}</span>
-          <span>${escapeHtml(providerDisplay(session.provider))}</span>
+      <h3>${escapeHtml(sessionTitle(session))}</h3>
+      <div class="detail-meta">
+        <span>${escapeHtml(longDate(session.startedAt || session.createdAt))}</span>
+        <span class="mono">${escapeHtml(durationLabel(session))}</span>
+        <span class="app-pill">${escapeHtml(meetingApp(session))}</span>
+        <span class="provider-pill">${escapeHtml(providerDisplay(session.provider))}</span>
+      </div>
+    </div>
+
+    <div class="meeting-detail-body">
+      <section class="detail-transcript-column">
+        <div class="panel-label">Transcript</div>
+        <div class="segment-list">
+          ${segments.map(segment => `
+            <button class="segment-row" type="button" data-action="mode" data-mode="hinglish">
+              <span class="segment-time">${escapeHtml(segment.time)}</span>
+              <span class="speaker-avatar">${escapeHtml(segment.initials)}</span>
+              <span class="segment-copy">
+                <strong>${escapeHtml(segment.speaker)}</strong>
+                <span>${escapeHtml(segment.text)}</span>
+              </span>
+            </button>
+          `).join('')}
+        </div>
+      </section>
+
+      <section class="detail-notes-column">
+        ${needsRecovery ? `
+          <section class="recovery-notice" role="status">
+            <div>
+              <strong>Recording recovered</strong>
+              <p>Scribely saved the recording before the app closed. Transcribe it when you are ready.</p>
+            </div>
+            <button class="button primary" type="button" data-action="recover">${icon('sparkles')}<span>Transcribe saved recording</span></button>
+          </section>
+        ` : ''}
+        <div class="video-tile">
+          <div class="video-speaker">
+            <div class="video-avatar">${escapeHtml(currentSpeaker.initials)}</div>
+            <div>
+              <strong>${escapeHtml(currentSpeaker.speaker)}</strong>
+              <span>Camera off · audio recording</span>
+            </div>
+          </div>
+          <div class="video-others">
+            ${otherSpeakers.map(segment => `<span>${escapeHtml(segment.initials)}</span>`).join('')}
+          </div>
+          <div class="video-controls">
+            <button class="play-button" type="button" data-action="copy">${icon('play')}<span>Copy transcript</span></button>
+            <div class="play-clock">00:00 / ${escapeHtml(durationLabel(session))}</div>
+          </div>
+        </div>
+
+        <div class="notes-section">
+          <div class="panel-label">Notes</div>
+          <div class="summary-list">
+            ${(summary.length ? summary : ['Notes will appear after transcription finishes.']).map(text => `
+              <p>${escapeHtml(typeof text === 'string' ? text : text.text)}</p>
+            `).join('')}
+          </div>
+        </div>
+
+        <div class="notes-section">
+          <div class="panel-label">Action items</div>
+          <div class="action-list">
+            ${(actionItems.length ? actionItems : [{ text: 'No action items found.', done: false }]).map(item => `
+              <label class="action-row">
+                <span class="check-box ${item.done ? 'checked' : ''}">${item.done ? '✓' : ''}</span>
+                <span>${escapeHtml(typeof item === 'string' ? item : item.text)}</span>
+              </label>
+            `).join('')}
+          </div>
+        </div>
+
+        <label class="notes-section user-note">
+          <span class="panel-label">Your notes</span>
+          <textarea id="detailRawNotes" spellcheck="true" placeholder="Type anything...">${escapeHtml(session.rawNotes || '')}</textarea>
+        </label>
+
+        <div class="detail-actions-inline">
+          <button class="button secondary" type="button" data-action="save-notes">${icon('save')}<span>Save changes</span></button>
+          <button class="button secondary" type="button" data-action="export">${icon('download')}<span>Export</span></button>
+          <button class="button danger" type="button" data-action="delete">${icon('trash-2')}<span>Delete</span></button>
         </div>
       </div>
-      <div class="detail-actions">
-        <button class="button secondary" type="button" data-action="copy" ${hasDetailText ? '' : 'disabled'}>
-          ${icon('copy')}<span>Copy</span>
-        </button>
-        <button class="button secondary" type="button" data-action="export" ${hasDetailText ? '' : 'disabled'}>
-          ${icon('download')}<span>Export ${escapeHtml(modeLabel)}</span>
-        </button>
-        <button class="button danger" type="button" data-action="delete">
-          ${icon('trash-2')}<span>Delete</span>
-        </button>
-      </div>
     </div>
-    <div class="detail-tabbar segmented-control" role="group" aria-label="Meeting detail view">
-      ${tabButton('notes', 'Notes')}
-      ${tabButton('transcript', 'Transcript')}
-    </div>
-    ${state.detailTab === 'transcript' ? `
-      <div class="segmented-control compact-control" role="group" aria-label="Transcript script">
-        <button type="button" data-action="mode" data-mode="hinglish" class="${state.transcriptMode === 'hinglish' ? 'active' : ''}" ${transcriptAvailable ? '' : 'disabled'}>Hinglish</button>
-        <button type="button" data-action="mode" data-mode="original" class="${state.transcriptMode === 'original' ? 'active' : ''}" ${transcriptAvailable ? '' : 'disabled'}>Original</button>
-      </div>
-    ` : ''}
-    ${state.detailTab === 'notes' ? `
-      <div class="notes-grid">
-        <label class="field">
-          <span>Raw notes</span>
-          <textarea id="detailRawNotes" rows="7" spellcheck="true">${escapeHtml(session.rawNotes || '')}</textarea>
-        </label>
-        <label class="field">
-          <span>Template</span>
-          <select id="detailTemplate">
-            ${['general', 'product', 'sales', 'interview', 'standup', 'one_on_one', 'hiring'].map(value => `
-              <option value="${value}" ${session.noteTemplate === value ? 'selected' : ''}>${escapeHtml(templateLabel(value))}</option>
-            `).join('')}
-          </select>
-        </label>
-      </div>
-      <div class="button-row">
-        <button class="button secondary" type="button" data-action="save-notes">${icon('save')}<span>Save changes</span></button>
-        <button class="button secondary" type="button" data-action="regenerate">${icon('sparkles')}<span>Refresh notes</span></button>
-      </div>
-    ` : ''}
-    <pre class="transcript-body">${escapeHtml(body)}</pre>
-    <details class="meeting-helper-panel">
-      <summary>
-        <span>Meeting helper</span>
-        <small>Ask questions, review actions, or draft follow-up</small>
-      </summary>
-      <div class="ask-row">
-        <input id="detailAskInput" autocomplete="off" spellcheck="true" placeholder="Ask about this meeting, request a rewrite, or generate a follow-up" />
-        <button class="button secondary" type="button" data-action="ask-detail">${icon('message-circle')}<span>Ask</span></button>
-      </div>
-      <pre class="chat-answer">${escapeHtml(chatAnswer || 'Ask anything about this meeting.')}</pre>
-      <div class="action-grid">
-        <section>
-          <span class="eyebrow">Action items</span>
-          <pre class="transcript-body compact">${escapeHtml(bullets(smart.actionItems))}</pre>
-        </section>
-        <section>
-          <span class="eyebrow">Follow-up email</span>
-          <pre class="transcript-body compact">${escapeHtml(smart.followUpEmail || 'No follow-up drafted yet.')}</pre>
-        </section>
-        <section>
-          <span class="eyebrow">Project plan</span>
-          <pre class="transcript-body compact">${escapeHtml(smart.projectPlan || 'No project plan available yet.')}</pre>
-        </section>
-      </div>
-    </details>
   `;
 }
 
@@ -1096,6 +1366,32 @@ async function updateSelectedNotes({ regenerate = false } = {}) {
   renderMeetingList();
   renderTranscriptDetail(state.selectedSession);
   showToast(regenerate ? 'Enhanced notes regenerated.' : 'Notes saved.');
+}
+
+async function recoverInterruptedRecording() {
+  const session = state.selectedSession;
+  if (!window.scribelyRecovery?.needsRecovery(session, state.sessionId)) return;
+
+  const provider = session.provider || selectedProvider();
+  const providerMeta = PROVIDER_META[provider] || selectedProviderMeta();
+  const apiKey = state.providerApiKeys[provider] || (provider === selectedProvider() ? els.providerApiKey.value.trim() : '');
+  if (providerMeta.requiresApiKey !== false && !apiKey) {
+    setView('settings');
+    throw new Error(`Add your ${providerMeta.label} API key in Settings, then transcribe this saved recording.`);
+  }
+
+  await requestJson(`/local-capture/${session.id}/finish`, {
+    method: 'POST',
+    body: JSON.stringify({ provider, api_key: apiKey })
+  });
+
+  state.sessionId = session.id;
+  state.selectedSession = { ...session, status: 'transcribing' };
+  state.sessions = state.sessions.map(item => item.id === session.id ? state.selectedSession : item);
+  renderMeetingList();
+  renderTranscriptDetail(state.selectedSession);
+  showToast(`Transcribing saved recording with ${providerMeta.label}.`);
+  pollSession();
 }
 
 async function askDetailQuestion() {
@@ -1193,9 +1489,15 @@ els.testConnectionButton.addEventListener('click', () => {
 
 els.openSettingsButton.addEventListener('click', () => setView('settings'));
 
+els.sidebarNewRecordingButton.addEventListener('click', () => {
+  setView('recorder');
+  els.meetingTitle.focus();
+});
+
 els.refreshAppButton.addEventListener('click', () => {
   testConnection({ quiet: false }).catch(error => showToast(friendlyError(error), 'error'));
   if (state.activeView === 'library') loadLibrary().catch(error => showToast(friendlyError(error), 'error'));
+  if (state.activeView === 'calendar') loadLibrary().catch(error => showToast(friendlyError(error), 'error'));
 });
 
 els.refreshLibraryButton.addEventListener('click', () => {
@@ -1205,15 +1507,28 @@ els.refreshLibraryButton.addEventListener('click', () => {
 els.rawNotes.addEventListener('input', scheduleNotesSave);
 els.meetingTemplate.addEventListener('change', scheduleNotesSave);
 els.deleteAudioAfterTranscription.addEventListener('change', saveSettings);
+els.microphoneDevice.addEventListener('change', saveSettings);
+els.detectMeetingApps.addEventListener('change', saveSettings);
 els.transcriptionProvider.addEventListener('change', () => {
-  saveSettings();
-  updateConnectionUi();
-  testConnection({ quiet: true }).catch(() => updateConnectionUi());
+  setProvider(els.transcriptionProvider.value);
 });
+
+els.providerCardList?.addEventListener('click', event => {
+  const card = event.target.closest('[data-provider-card]');
+  if (!card) return;
+  setProvider(card.dataset.providerCard);
+});
+
 els.providerApiKey.addEventListener('input', () => {
+  rememberProviderKey();
   saveSettings();
+  persistCredentials();
   state.connection.providerKey = hasProviderKey();
   updateConnectionUi();
+});
+
+els.apiKey.addEventListener('input', () => {
+  persistCredentials();
 });
 
 els.globalAskButton.addEventListener('click', () => {
@@ -1229,6 +1544,28 @@ els.globalAskInput.addEventListener('keydown', event => {
 
 els.librarySearch.addEventListener('input', renderMeetingList);
 els.libraryStatusFilter.addEventListener('change', renderMeetingList);
+
+els.calendarTodayButton.addEventListener('click', () => {
+  state.calendarDate = new Date();
+  renderCalendar();
+});
+
+els.calendarPrevButton.addEventListener('click', () => {
+  state.calendarDate = addDays(state.calendarDate, -7);
+  renderCalendar();
+});
+
+els.calendarNextButton.addEventListener('click', () => {
+  state.calendarDate = addDays(state.calendarDate, 7);
+  renderCalendar();
+});
+
+els.calendarDays.addEventListener('click', event => {
+  const item = event.target.closest('[data-calendar-session-id]');
+  if (!item) return;
+  setView('library');
+  selectSession(item.dataset.calendarSessionId).catch(error => showToast(friendlyError(error), 'error'));
+});
 
 els.meetingList.addEventListener('click', event => {
   const item = event.target.closest('.meeting-item');
@@ -1251,6 +1588,7 @@ els.transcriptDetail.addEventListener('click', event => {
     return;
   }
   if (action === 'copy') copyText(currentDetailText(state.selectedSession)).catch(error => showToast(friendlyError(error), 'error'));
+  if (action === 'recover') recoverInterruptedRecording().catch(error => showToast(friendlyError(error), 'error'));
   if (action === 'export') exportTranscript(state.selectedSession);
   if (action === 'save-notes') updateSelectedNotes().catch(error => showToast(friendlyError(error), 'error'));
   if (action === 'regenerate') updateSelectedNotes({ regenerate: true }).catch(error => showToast(friendlyError(error), 'error'));
@@ -1271,8 +1609,13 @@ els.confirmDeleteButton.addEventListener('click', () => {
   deleteSelectedSession().catch(error => showToast(friendlyError(error), 'error'));
 });
 
-loadSettings();
-setView('recorder');
-setStatus('idle', 'Idle');
-resetRecordingUi();
-testConnection({ quiet: true }).catch(() => updateConnectionUi());
+async function initializeApp() {
+  await loadSettings();
+  setView('library');
+  setStatus('idle', 'Idle');
+  resetRecordingUi();
+  testConnection({ quiet: true }).catch(() => updateConnectionUi());
+  loadLibrary({ quiet: true }).catch(error => showToast(friendlyError(error), 'error'));
+}
+
+initializeApp();

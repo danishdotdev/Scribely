@@ -16,6 +16,8 @@ desktop-data/
 logs/
 coverage/
 *.log
+.desktop-ui.*
+.superpowers/
 
 # Secrets / credentials
 *.pem

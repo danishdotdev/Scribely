@@ -4,52 +4,65 @@
     <meta charset="utf-8" />
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; connect-src http://127.0.0.1:* http://localhost:* https:; img-src 'self' file: data:; media-src 'self' blob:; script-src 'self'; style-src 'self';"
+      content="default-src 'self'; connect-src http://127.0.0.1:* http://localhost:* https:; img-src 'self' file: data:; media-src 'self' blob:; script-src 'self'; style-src 'self' 'unsafe-inline';"
     />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Siela Recorder</title>
+    <title>Scribely</title>
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
     <main class="app-shell">
       <aside class="sidebar" aria-label="Primary navigation">
         <div class="brand">
-          <div class="brand-mark">S</div>
-          <div>
-            <h1>Siela Recorder</h1>
-            <p>Desktop transcription</p>
+          <div class="brand-mark" aria-hidden="true">
+            <span></span><span></span><span></span><span></span><span></span>
           </div>
+          <div>
+            <h1>Scribely</h1>
+          </div>
+          <span class="local-badge">Local</span>
         </div>
 
-        <nav class="nav-list">
-          <button class="nav-item active" type="button" data-view="recorder" aria-current="page">
-            <img class="icon" src="../../node_modules/lucide-static/icons/radio.svg" alt="" />
-            <span>Recorder</span>
-          </button>
-          <button class="nav-item" type="button" data-view="library">
-            <img class="icon" src="../../node_modules/lucide-static/icons/library.svg" alt="" />
-            <span>Library</span>
+        <button id="sidebarNewRecordingButton" class="sidebar-record-button" type="button">
+          <img class="icon" src="../../node_modules/lucide-static/icons/mic.svg" alt="" />
+          <span>New recording</span>
+        </button>
+
+        <label class="sidebar-search">
+          <img class="icon" src="../../node_modules/lucide-static/icons/search.svg" alt="" />
+          <input id="librarySearch" type="search" placeholder="Search meetings..." />
+        </label>
+
+        <div class="sidebar-meetings">
+          <div id="sidebarMeetingHeading" class="sidebar-section-label">Meetings</div>
+          <div id="meetingList" class="meeting-list"></div>
+        </div>
+
+        <nav class="nav-list sidebar-bottom-nav">
+          <button class="nav-item" type="button" data-view="calendar">
+            <img class="icon" src="../../node_modules/lucide-static/icons/calendar-days.svg" alt="" />
+            <span>Calendar</span>
           </button>
           <button class="nav-item" type="button" data-view="settings">
             <img class="icon" src="../../node_modules/lucide-static/icons/settings.svg" alt="" />
             <span>Settings</span>
+            <small id="sidebarStatusText">Local</small>
           </button>
         </nav>
 
-        <div class="sidebar-status">
+        <div class="sidebar-status" hidden>
           <div id="sidebarStatusDot" class="status-dot warning"></div>
           <div>
             <strong id="sidebarStatusTitle">Checking connection</strong>
-            <span id="sidebarStatusText">Local API</span>
           </div>
         </div>
       </aside>
 
       <section class="workspace">
-        <header class="topbar">
+        <header class="topbar" hidden>
           <div>
             <h2 id="viewTitle">Recorder</h2>
-            <p id="viewSubtitle">Pick a provider, paste your API key, then record locally.</p>
+            <p id="viewSubtitle">Record meetings from this computer and save searchable notes.</p>
           </div>
           <div class="topbar-actions">
             <button id="refreshAppButton" class="icon-button" type="button" aria-label="Refresh">
@@ -64,7 +77,7 @@
             <section class="surface primary-recorder">
               <div class="recording-header">
                 <div>
-                  <span class="eyebrow">Current recording</span>
+                  <span class="eyebrow">Current session</span>
                   <h3 id="recordingTitle">Ready to record</h3>
                 </div>
                 <div id="timer" class="timer">00:00</div>
@@ -74,7 +87,7 @@
                 <div class="setup-copy">
                   <span class="eyebrow">Setup</span>
                   <h3 id="setupTitle">Add your transcription key</h3>
-                  <p id="setupText">Choose a provider in Settings and paste the API key you want this app to use.</p>
+                  <p id="setupText">Choose a provider once, then Scribely can capture meetings and save notes locally.</p>
                 </div>
                 <button id="openSettingsButton" class="button secondary" type="button">
                   <img class="icon" src="../../node_modules/lucide-static/icons/key-round.svg" alt="" />
@@ -88,14 +101,14 @@
               </label>
 
               <label class="field">
-                <span>Notes during the meeting <small>optional</small></span>
+                <span>Your notes <small>optional</small></span>
                 <textarea id="rawNotes" rows="5" spellcheck="true" placeholder="Paste agenda items, decisions, names, or words the transcript should preserve."></textarea>
               </label>
 
               <details class="advanced-recorder-options">
                 <summary>
                   <span>Recording options</span>
-                  <small>Microphone, template, privacy, and audio check</small>
+                  <small>Microphone, note style, storage, and audio check</small>
                 </summary>
 
                 <label class="field">
@@ -154,7 +167,7 @@
                 </button>
                 <button id="stopButton" class="button danger" type="button" disabled>
                   <img class="icon" src="../../node_modules/lucide-static/icons/square.svg" alt="" />
-                  <span>End recording</span>
+                  <span>Stop &amp; save</span>
                 </button>
               </div>
 
@@ -164,8 +177,8 @@
             <section class="surface readiness-panel">
               <div class="section-heading">
                 <div>
-                  <span class="eyebrow">Simple setup</span>
-                  <h3>Three steps</h3>
+                  <span class="eyebrow">Ready check</span>
+                  <h3>Before you record</h3>
                 </div>
                 <button id="testConnectionButton" class="button secondary" type="button">
                   <img class="icon" src="../../node_modules/lucide-static/icons/check-circle-2.svg" alt="" />
@@ -184,14 +197,14 @@
                 <li>
                   <span>2</span>
                   <div>
-                    <strong>Paste API key</strong>
+                    <strong>Save API key</strong>
                     <p id="keyStepText">Your key stays on this computer and is used for transcription.</p>
                   </div>
                 </li>
                 <li>
                   <span>3</span>
                   <div>
-                    <strong>Start recording</strong>
+                    <strong>Share meeting audio</strong>
                     <p>Pick the meeting window or screen with audio enabled.</p>
                   </div>
                 </li>
@@ -201,7 +214,7 @@
                 <div class="readiness-row" id="serverReadyRow">
                   <div class="status-dot warning"></div>
                   <div>
-                    <strong>Local app server</strong>
+                    <strong>Scribely app</strong>
                     <span id="serverReadyText">Checking</span>
                   </div>
                 </div>
@@ -244,8 +257,8 @@
           <section class="surface transcript-preview">
             <div class="section-heading">
               <div>
-                <span class="eyebrow">Latest transcript</span>
-                <h3 id="latestTranscriptTitle">No transcript yet</h3>
+                <span class="eyebrow">Latest notes</span>
+                <h3 id="latestTranscriptTitle">No meeting saved yet</h3>
               </div>
               <div class="button-row">
                 <button id="openCurrentButton" class="button secondary" type="button" disabled>
@@ -258,16 +271,12 @@
                 </button>
               </div>
             </div>
-            <pre id="transcript">Your latest transcript will appear here after recording.</pre>
+            <pre id="transcript">Your latest transcript and notes will appear here after recording.</pre>
           </section>
         </section>
 
         <section id="libraryView" class="view" aria-labelledby="viewTitle">
-          <section class="surface library-toolbar">
-            <label class="search-field">
-              <img class="icon" src="../../node_modules/lucide-static/icons/search.svg" alt="" />
-              <input id="librarySearch" type="search" placeholder="Search transcripts" />
-            </label>
+          <section class="surface library-toolbar" hidden>
             <label class="select-field">
               <span>Status</span>
               <select id="libraryStatusFilter">
@@ -299,15 +308,9 @@
             <pre id="globalAskAnswer" class="chat-answer" hidden></pre>
           </details>
 
-          <div class="library-grid">
-            <section class="surface meeting-list-panel">
-              <div class="section-heading compact">
-                <h3>Meetings</h3>
-                <span id="libraryCount" class="muted-count">0</span>
-              </div>
-              <div id="meetingList" class="meeting-list"></div>
-            </section>
+          <span id="libraryCount" class="muted-count" hidden>0</span>
 
+          <div class="library-grid">
             <section class="surface transcript-detail-panel">
               <div id="transcriptDetail" class="transcript-detail empty-state">
                 <img class="empty-icon" src="../../node_modules/lucide-static/icons/file-search.svg" alt="" />
@@ -318,13 +321,43 @@
           </div>
         </section>
 
+        <section id="calendarView" class="view calendar-view" aria-labelledby="viewTitle">
+          <section class="surface calendar-shell">
+            <div class="calendar-header">
+              <div>
+                <span class="eyebrow">Schedule</span>
+                <h3 id="calendarMonthLabel">Calendar</h3>
+                <p id="calendarRangeLabel">Saved meetings appear here after recording.</p>
+              </div>
+              <div class="calendar-actions">
+                <button id="calendarTodayButton" class="button secondary" type="button">
+                  <img class="icon" src="../../node_modules/lucide-static/icons/calendar-check.svg" alt="" />
+                  <span>Today</span>
+                </button>
+                <button id="calendarPrevButton" class="icon-button" type="button" aria-label="Previous week">
+                  <img class="icon" src="../../node_modules/lucide-static/icons/chevron-left.svg" alt="" />
+                </button>
+                <button id="calendarNextButton" class="icon-button" type="button" aria-label="Next week">
+                  <img class="icon" src="../../node_modules/lucide-static/icons/chevron-right.svg" alt="" />
+                </button>
+              </div>
+            </div>
+
+            <div id="calendarWeekStrip" class="calendar-week-strip" aria-label="Week days"></div>
+
+            <div class="calendar-board" aria-label="Saved meetings by week">
+              <div id="calendarHours" class="calendar-hours" aria-hidden="true"></div>
+              <div id="calendarDays" class="calendar-days"></div>
+            </div>
+          </section>
+        </section>
+
         <section id="settingsView" class="view" aria-labelledby="viewTitle">
           <form id="settingsForm" class="settings-grid">
             <section class="surface setup-settings">
               <div class="section-heading">
                 <div>
-                  <span class="eyebrow">API setup</span>
-                  <h3>Bring your own key</h3>
+                  <h3>Settings</h3>
                 </div>
                 <button id="saveSettings" class="button primary" type="submit">
                   <img class="icon" src="../../node_modules/lucide-static/icons/save.svg" alt="" />
@@ -332,16 +365,43 @@
                 </button>
               </div>
 
-              <p class="settings-intro">Choose the transcription provider you want to pay for and paste that provider's API key. No cloud setup is needed for local recording.</p>
+              <p class="settings-intro">Scribely stores recordings and notes on this computer. Audio leaves the device only when you use a cloud transcription provider.</p>
 
-              <label class="field">
+              <div class="settings-section-title">Transcription provider</div>
+              <div id="providerCardList" class="provider-card-list">
+                <button class="provider-card" type="button" data-provider-card="assemblyai">
+                  <span class="provider-check"></span>
+                  <span>
+                    <strong>AssemblyAI</strong>
+                    <small>Cloud transcription with speaker labels and meeting-note support.</small>
+                  </span>
+                </button>
+                <button class="provider-card" type="button" data-provider-card="deepgram">
+                  <span class="provider-check"></span>
+                  <span>
+                    <strong>Deepgram</strong>
+                    <small>Cloud transcription. Fast, strong accuracy on accents and crosstalk.</small>
+                  </span>
+                </button>
+                <button class="provider-card" type="button" data-provider-card="openai">
+                  <span class="provider-check"></span>
+                  <span>
+                    <strong>OpenAI Whisper API</strong>
+                    <small>Cloud transcription via your own API key.</small>
+                  </span>
+                </button>
+              </div>
+
+              <div class="settings-hidden-fields">
+                <label class="field">
                 <span>Transcription provider</span>
                 <select id="transcriptionProvider">
                   <option value="assemblyai">AssemblyAI</option>
                   <option value="deepgram">Deepgram</option>
                   <option value="openai">OpenAI Whisper</option>
                 </select>
-              </label>
+                </label>
+              </div>
 
               <label class="field">
                 <span id="providerKeyLabel">AssemblyAI API key</span>
@@ -375,14 +435,37 @@
             <section class="surface">
               <div class="section-heading">
                 <div>
-                  <span class="eyebrow">Storage</span>
-                  <h3>Local recordings</h3>
+                  <div class="settings-section-title">Audio</div>
+                </div>
+              </div>
+              <div class="settings-list">
+                <label class="field">
+                  <span>Microphone</span>
+                  <select id="microphoneDevice">
+                    <option value="default">System default microphone</option>
+                  </select>
+                  <small>Pick the exact input before recording from the recorder screen.</small>
+                </label>
+                <label class="settings-toggle-row">
+                  <input id="detectMeetingApps" type="checkbox" checked />
+                  <span>
+                    <strong>Show meeting-ready prompts</strong>
+                    <small>Keep Scribely focused on local meetings without joining calls as a bot.</small>
+                  </span>
+                </label>
+              </div>
+            </section>
+
+            <section class="surface">
+              <div class="section-heading">
+                <div>
+                  <div class="settings-section-title">Storage</div>
                 </div>
               </div>
               <div class="storage-list">
                 <div>
                   <span>Transcript index</span>
-                  <strong>data/meetings.json</strong>
+                  <strong>Local Scribely library</strong>
                 </div>
                 <div>
                   <span>Audio recordings</span>
@@ -415,6 +498,7 @@
 
     <div id="toastRegion" class="toast-region" aria-live="polite" aria-atomic="true"></div>
 
+    <script src="./recovery.js"></script>
     <script src="./renderer.js"></script>
   </body>
 </html>
