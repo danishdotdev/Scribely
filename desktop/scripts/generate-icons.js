@@ -3,6 +3,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { app, nativeImage } = require('electron');
+const sharp = require('sharp');
 const { buildIco, buildIcns } = require('../src/icon-assets');
 
 const desktopRoot = path.resolve(__dirname, '..');
@@ -16,11 +17,17 @@ async function generate() {
   const master = nativeImage.createFromPath(sourcePath);
   if (master.isEmpty()) throw new Error('Approved Scribely icon source is empty.');
   const pngBySize = new Map();
+  const transparentPngBySize = new Map();
 
   for (const size of sizes) {
-    const png = master.resize({ width: size, height: size, quality: 'best' }).toPNG();
+    const png = await sharp(sourcePath)
+      .flatten({ background: '#529cfd' })
+      .resize(size, size, { kernel: sharp.kernel.lanczos3 })
+      .png()
+      .toBuffer();
     if (!png.length) throw new Error(`Generated ${size}px icon is empty.`);
     pngBySize.set(size, png);
+    transparentPngBySize.set(size, master.resize({ width: size, height: size, quality: 'best' }).toPNG());
     fs.writeFileSync(path.join(pngRoot, `icon-${size}.png`), png);
   }
 
@@ -39,7 +46,7 @@ async function generate() {
     [1024, 'ic10']
   ]);
   fs.writeFileSync(path.join(assetRoot, 'icon.icns'), buildIcns(
-    [...icnsTypes].map(([size, type]) => ({ type, png: pngBySize.get(size) }))
+    [...icnsTypes].map(([size, type]) => ({ type, png: transparentPngBySize.get(size) }))
   ));
 }
 
