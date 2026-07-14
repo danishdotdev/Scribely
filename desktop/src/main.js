@@ -8,6 +8,14 @@ const { createCredentialStore } = require('./secure-settings');
 const API_PORT = Number(process.env.PORT || 3000);
 const API_HEALTH_URL = `http://127.0.0.1:${API_PORT}/health`;
 const REPO_ROOT = path.resolve(__dirname, '..', '..');
+const APP_ICON_PATH = path.resolve(__dirname, '..', 'assets', 'icons', 'icon-256.png');
+const legacyUserDataPath = path.join(app.getPath('appData'), 'meeting-bot-desktop');
+const currentUserDataPath = app.getPath('userData');
+
+app.setName('Scribely');
+app.setPath('userData', fs.existsSync(legacyUserDataPath) ? legacyUserDataPath : currentUserDataPath);
+if (process.platform === 'win32') app.setAppUserModelId('com.scribely.desktop');
+
 let apiProcess = null;
 let credentialStore = null;
 
@@ -56,6 +64,7 @@ function createWindow() {
     minWidth: 780,
     minHeight: 620,
     title: 'Scribely',
+    icon: APP_ICON_PATH,
     center: true,
     autoHideMenuBar: true,
     backgroundColor: '#f6f7f9',
@@ -86,6 +95,7 @@ function configureCaptureSession() {
 }
 
 app.whenReady().then(async () => {
+  if (process.platform === 'darwin' && app.dock) app.dock.setIcon(APP_ICON_PATH);
   credentialStore = createCredentialStore({
     fs,
     safeStorage,

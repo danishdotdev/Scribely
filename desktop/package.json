@@ -1,9 +1,23 @@
 {
   "name": "meeting-bot-desktop",
+  "productName": "Scribely",
   "version": "0.1.0",
   "private": true,
   "description": "Desktop recorder for local meeting transcription without a meeting bot joining.",
   "main": "src/main.js",
+  "build": {
+    "appId": "com.scribely.desktop",
+    "productName": "Scribely",
+    "directories": {
+      "buildResources": "assets"
+    },
+    "win": {
+      "icon": "assets/icon.ico"
+    },
+    "mac": {
+      "icon": "assets/icon.icns"
+    }
+  },
   "scripts": {
     "dev": "electron .",
     "check": "node ../scripts/check-syntax.js",
